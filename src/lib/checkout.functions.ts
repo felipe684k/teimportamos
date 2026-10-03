@@ -64,8 +64,7 @@ async function revalidateOrderItems(
     ]);
 
     if (!dbProducts || dbProducts.length === 0) {
-      const total = rawItems.reduce((a, i) => a + i.qty * i.unitPrice, 0);
-      return { validatedItems: rawItems, total };
+      return { validatedItems: [], total: 0, error: "No se pudieron obtener los productos de la base de datos." };
     }
 
     const configObj: Record<string, string> = {};
@@ -238,8 +237,8 @@ export const createCheckout = createServerFn({ method: "POST" })
       return { error: "No pudimos registrar tu pedido. Probá de nuevo en unos minutos." };
     }
 
-    let items = data.items;
-    let total = data.items.reduce((a, i) => a + i.qty * i.unitPrice, 0);
+    let items: CheckoutItem[] = [];
+    let total = 0;
     let couponDiscountAmount = 0;
     let validCouponApplied: string | null = null;
 
@@ -267,7 +266,7 @@ export const createCheckout = createServerFn({ method: "POST" })
 
       // Revalidación segura del cupón en el servidor
       if (data.couponCode && data.userId) {
-        const { data: dbConfigRows } = await supabaseAdmin.from("site_config").select("clave,valor");
+        const { data: dbConfigRows } = await (supabaseAdmin as any).from("site_config").select("clave,valor");
         const configObj: Record<string, string> = {};
         for (const row of dbConfigRows ?? []) {
           if (row.clave && row.valor !== undefined) configObj[row.clave] = String(row.valor);
@@ -287,7 +286,7 @@ export const createCheckout = createServerFn({ method: "POST" })
               filterParts.push(`user_email.ilike.${data.shipping.email.trim().toLowerCase()}`);
             }
             try {
-              const { data: usages } = await supabaseAdmin
+              const { data: usages } = await (supabaseAdmin as any)
                 .from("coupon_usages")
                 .select("id")
                 .eq("coupon_code", promoCode)
@@ -322,6 +321,13 @@ export const createCheckout = createServerFn({ method: "POST" })
       }
     } catch (err) {
       console.error("Error al revalidar la orden:", err);
+      return {
+        error: "No pudimos validar los precios de tu carrito. Por favor recargá la página e intentalo nuevamente.",
+      };
+    }
+
+    if (items.length === 0 || total <= 0) {
+      return { error: "No se pudieron calcular los totales de tu orden. Por favor recargá la página." };
     }
 
     // Generamos el código de orden
@@ -350,7 +356,7 @@ export const createCheckout = createServerFn({ method: "POST" })
       // Registrar uso del cupón si fue aplicado
       if (validCouponApplied) {
         try {
-          await supabaseAdmin.from("coupon_usages").insert({
+          await (supabaseAdmin as any).from("coupon_usages").insert({
             user_id: data.userId ?? null,
             user_email: (data.shipping.email ?? "").trim().toLowerCase(),
             coupon_code: validCouponApplied,

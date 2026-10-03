@@ -196,7 +196,7 @@ export const verifyOrderPayment = createServerFn({ method: "POST" })
           let mpCouponCode: string | undefined;
           let mpCouponDiscount: number | undefined;
           try {
-            const { data: usage } = await supabaseAdmin
+            const { data: usage } = await (supabaseAdmin as any)
               .from("coupon_usages")
               .select("coupon_code, discount_amount")
               .eq("order_code", order.order_code)
@@ -580,8 +580,8 @@ export const createTransferOrder = createServerFn({ method: "POST" })
     }
 
     // 1. Revalidar precios y mínimos de categoría
-    let total = data.items.reduce((a, i) => a + i.qty * i.unitPrice, 0);
-    let items = data.items;
+    let total = 0;
+    let items: OrderItem[] = [];
     let couponDiscountAmount = 0;
     let validCouponApplied: string | null = null;
 
@@ -591,12 +591,14 @@ export const createTransferOrder = createServerFn({ method: "POST" })
         supabaseAdmin.from("site_config").select("clave,valor"),
       ]);
 
+      if (!dbProducts || dbProducts.length === 0) {
+        return { status: "error", message: "No se pudieron obtener los productos de la base de datos." };
+      }
+
       const configMap: Record<string, string> = {};
       for (const row of dbConfig ?? []) {
         if (row.clave && row.valor) configMap[row.clave] = row.valor;
       }
-
-      if (dbProducts) {
         const {
           normCat,
           parseCategoryRules,
@@ -663,7 +665,6 @@ export const createTransferOrder = createServerFn({ method: "POST" })
         const listTotal = items.reduce((a, i) => a + i.qty * i.unitPrice, 0);
         const discPct = transferDiscountPct(configMap);
         total = transferPrice(listTotal, discPct);
-      }
 
       // Revalidación segura del cupón en el servidor
       if (data.couponCode && data.userId) {
@@ -705,13 +706,17 @@ export const createTransferOrder = createServerFn({ method: "POST" })
       }
     } catch (err) {
       console.error("Error revalidando items en transferencia:", err);
-      // Fallback seguro: aunque falle la revalidación, aplicar el descuento de transferencia
-      // por defecto para que el total guardado nunca sea el precio de lista.
-      const { transferPrice: tP, DEFAULT_TRANSFER_DISCOUNT } = await import("./store").catch(() => ({
-        transferPrice: (p: number, d: number) => Math.round(p * (1 - d / 100)),
-        DEFAULT_TRANSFER_DISCOUNT: 7,
-      }));
-      total = tP(total, DEFAULT_TRANSFER_DISCOUNT);
+      return {
+        status: "error",
+        message: "No pudimos validar los precios de tu pedido. Por favor recargá la página e intentalo nuevamente.",
+      };
+    }
+
+    if (items.length === 0 || total <= 0) {
+      return {
+        status: "error",
+        message: "No se pudieron calcular los totales del pedido. Por favor recargá la página.",
+      };
     }
 
     const orderCode = makeCode();

@@ -404,6 +404,11 @@ function Catalogo() {
           const phone = (config["whatsapp_individual"] ?? config["whatsapp_numero"] ?? "").replace(/\D/g, "");
           if (!phone) return null;
           const catName = cat && !showCombos ? cat.trim().slice(0, 60) : "";
+          const esCamisetas = catName
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[̀-ͯ]/g, "")
+            .includes("camiseta");
           const msg = encodeURIComponent(
             catName
               ? `Hola! Estaba viendo ${catName} en el catálogo y no encontré lo que buscaba. ¿Me podés ayudar?`
@@ -427,7 +432,7 @@ function Catalogo() {
                   ¿No encontrás lo que buscás?
                 </p>
                 <p className="mt-0.5 text-xs text-foreground/80 sm:text-[13px]">
-                  Tenemos modelos que no siempre están en el catálogo online.{" "}
+                  Tenemos {esCamisetas ? "modelos" : "productos"} que no siempre están en el catálogo online.{" "}
                   <span className="font-semibold text-foreground">Consultanos por WhatsApp</span> y lo conseguimos.
                 </p>
               </div>
